@@ -1,3 +1,10 @@
+main
+
+mysql
+
+# dotenv environment variables file
+.env
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
