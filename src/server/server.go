@@ -17,10 +17,10 @@ const _UNDERSCORE = "_"
 const _EMPTY = ""
 
 type server struct {
-	dal *dal.Dal
+	dal dal.IDal
 }
 
-func newServer(dal *dal.Dal) *server {
+func newServer(dal dal.IDal) *server {
 	return &server{dal: dal}
 }
 
@@ -105,7 +105,7 @@ func (s *server) compressHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(newShortLink)
 }
 
-func Serve(config *config.Config, dal *dal.Dal) {
+func Serve(config *config.Config, dal dal.IDal) {
 	s := newServer(dal)
 
 	mux := http.NewServeMux()
