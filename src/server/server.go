@@ -6,15 +6,12 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/muturgan/s2l_go/src/config"
 	"github.com/muturgan/s2l_go/src/dal"
 	"github.com/muturgan/s2l_go/src/models"
 )
-
-const _UNDERSCORE = "_"
-const _EMPTY = ""
 
 type server struct {
 	dal dal.IDal
@@ -24,72 +21,42 @@ func newServer(dal dal.IDal) *server {
 	return &server{dal: dal}
 }
 
-func (s *server) indexHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	var parts [3]string
-	copy(parts[:], strings.Split(r.URL.Path, "/"))
-	underscoreOrHash := parts[1]
-	hashOrEmpty := parts[2]
-
-	var hash string
-	if underscoreOrHash != _UNDERSCORE && underscoreOrHash != _EMPTY {
-		hash = underscoreOrHash
-	} else if hashOrEmpty != _EMPTY {
-		hash = hashOrEmpty
-	} else {
-		fmt.Println("something wrong with the url")
-		fmt.Println(r.URL.Path)
-		http.Error(w, "Invalid URL (I don't know why)", http.StatusInternalServerError)
-		return
-	}
+func (s *server) hashHandler(ctx *gin.Context) {
+	hash := ctx.Param("hash")
 
 	link, err := s.dal.GetLinkByHash(hash)
 	if err != nil {
 		fmt.Println("GetLinkByHash error!")
 		fmt.Println(err)
-		http.Error(w, "Server error", http.StatusInternalServerError)
+		ctx.String(http.StatusInternalServerError, "Server error")
 		return
 	}
 	if link == nil {
 		fmt.Println("Not found!")
-		http.Error(w, "Not found", http.StatusNotFound)
+		ctx.String(http.StatusNotFound, "Not found")
 		return
 	}
 
-	w.Header().Set("Location", link.Link)
-	w.WriteHeader(http.StatusMovedPermanently)
+	ctx.Redirect(http.StatusMovedPermanently, link.Link)
 }
 
-func faviconHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+func faviconHandler(ctx *gin.Context) {
+	ctx.Status(http.StatusNoContent)
 }
 
-func (s *server) compressHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
+func (s *server) compressHandler(ctx *gin.Context) {
 	var cr models.CompressRequest
-	err := json.NewDecoder(r.Body).Decode(&cr)
+	err := json.NewDecoder(ctx.Request.Body).Decode(&cr)
 	if err != nil {
 		errMessage := "Incorrect request body. It should be a valid json-serialized object with a \"link\" field which is a valid url"
-		http.Error(w, errMessage, http.StatusBadRequest)
+		ctx.String(http.StatusBadRequest, errMessage)
 		return
 	}
 
 	_, err = url.ParseRequestURI(cr.Link)
 	if err != nil {
 		errMessage := "Incorrect request body. It should be a valid json-serialized object with a \"link\" field which is a valid url"
-		http.Error(w, errMessage, http.StatusBadRequest)
+		ctx.String(http.StatusBadRequest, errMessage)
 		return
 	}
 
@@ -97,25 +64,26 @@ func (s *server) compressHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fmt.Println("createNewLink error!")
 		fmt.Println(err)
-		http.Error(w, "Server error", http.StatusInternalServerError)
+		ctx.String(http.StatusInternalServerError, "Server error")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(newShortLink)
+	ctx.JSON(http.StatusOK, newShortLink)
 }
 
 func Serve(config *config.Config, dal dal.IDal) {
+	router := gin.Default()
+
 	s := newServer(dal)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/favicon.ico", faviconHandler)
-	mux.HandleFunc("/compress", s.compressHandler)
-	mux.HandleFunc("/", s.indexHandler)
+	router.GET("/favicon.ico", faviconHandler)
+	router.POST("/compress", s.compressHandler)
+	router.GET("/_/:hash", s.hashHandler)
+	router.GET("/:hash", s.hashHandler)
 
 	fmt.Println("ok let's try to start at http://localhost" + config.GetServingAddress())
 
-	err := http.ListenAndServe(config.GetServingAddress(), mux)
+	err := router.Run(config.GetServingAddress())
 	if err != nil {
 		log.Fatal(err)
 	}
